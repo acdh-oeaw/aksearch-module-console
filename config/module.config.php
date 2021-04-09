@@ -2,14 +2,18 @@
 namespace AkSearchConsole\Module\Configuration;
 
 $config = [
-    'controllers' => [
-        'factories' => [
-            'AkSearchConsole\Controller\ScheduledSearchController' => 'VuFind\Controller\AbstractBaseFactory'
-        ],
-        'aliases' => [
-            'scheduledsearch' => 'AkSearchConsole\Controller\ScheduledSearchController'
+    'vufind' => [
+        'plugin_managers' => [
+            'command' => [
+                'factories' => [
+                    'AkSearchConsole\Command\ScheduledSearch\NotifyCommand' => 'VuFindConsole\Command\ScheduledSearch\NotifyCommandFactory'
+                ],
+                'aliases' => [
+                    'VuFindConsole\Command\ScheduledSearch\NotifyCommand' => 'AkSearchConsole\Command\ScheduledSearch\NotifyCommand'
+                ]
+            ]
         ]
-    ]
+    ]    
 ];
 
 return $config;
