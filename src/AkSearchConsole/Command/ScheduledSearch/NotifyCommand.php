@@ -121,6 +121,21 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             return false;
         }
 
+        // AK: Set timezone to UTC. If this is not done, the date(...) function below
+        // would use the local timezone. This would result in a wrong time. Example:
+        // Let's assume that the date of the newest Solr record would be
+        // 2021-04-16T13:00:00Z. If our timezone is Europe/Vienna (DST) (= UTC + 2h),
+        // the result of the function 
+        //   date($this->iso8601, strtotime('2021-04-16T13:00:00Z'))
+        // (see below) would be 2021-04-16T15:00:00Z, so the date that would be used
+        // in the Solr query that gets the newest records would be 2 hours ahead.
+        // That would result in wrong query results which could make a difference
+        // when the $lastExecutionDate is close to the wrong date, i. e.:
+        //   2021-04-16 13:00:00 >= 2021-04-16 14:00:00
+        //   vs.
+        //   2021-04-16 15:00:00 >= 2021-04-16 14:00:00
+        $origTimeZone = date_default_timezone_get();
+        date_default_timezone_set('UTC');
         // AK: Use custom date field set in config.ini at scheduled_search_date_field
         // in [Account] section. We get this with the "getField" function defined in
         // AkSearch\RecordDriver\SolrDefault.
@@ -128,6 +143,8 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             $this->iso8601,
             strtotime($records[0]->getField($dateField, true, 'rsort'))
         );
+        // AK: Reset the timezone to the value before we set it to UTC
+        date_default_timezone_set($origTimeZone);
 
         $lastExecutionDate = $lastTime->format($this->iso8601);
         if ($newestRecordDate < $lastExecutionDate) {
@@ -167,6 +184,51 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             $newRecords[] = $record;
         }
         return $newRecords;
+    }
+
+    /**
+     * Try to send an email message to a user. Return true on success, false on
+     * error.
+     * 
+     * AK: Use "from" email set for "scheduled_search_email_from" in config.ini.
+     *
+     * @param \VuFind\Db\Row\User $user    User to email
+     * @param string              $message Email message body
+     *
+     * @return bool
+     */
+    protected function sendEmail($user, $message)
+    {
+        $subject = $this->mainConfig->Site->title
+            . ': ' . $this->translate('Scheduled Alert Results');
+
+        // AK: Use email address set for "scheduled_search_email_from" 
+        $from = $this->mainConfig->Account->scheduled_search_email_from
+            ?? $this->mainConfig->Site->email
+            ?: $this->mainConfig->Site->email;
+
+        $to = $user->email;
+        try {
+            $this->mailer->send($to, $from, $subject, $message);
+            return true;
+        } catch (\Exception $e) {
+            $this->msg(
+                'Initial email send failed; resetting connection and retrying...'
+            );
+        }
+        // If we got this far, the first attempt threw an exception; let's reset
+        // the connection, then try again....
+        $this->mailer->resetConnection();
+        try {
+            $this->mailer->send($to, $from, $subject, $message);
+        } catch (\Exception $e) {
+            $this->err(
+                "Failed to send message to {$user->email}: " . $e->getMessage()
+            );
+            return false;
+        }
+        // If we got here, the retry was a success!
+        return true;
     }
 
 }
