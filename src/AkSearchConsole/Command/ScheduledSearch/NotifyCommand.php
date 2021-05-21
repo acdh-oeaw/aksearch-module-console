@@ -143,8 +143,6 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             $this->iso8601,
             strtotime($records[0]->getField($dateField, true, 'rsort'))
         );
-        // AK: Reset the timezone to the value before we set it to UTC
-        date_default_timezone_set($origTimeZone);
 
         $lastExecutionDate = $lastTime->format($this->iso8601);
         if ($newestRecordDate < $lastExecutionDate) {
@@ -152,6 +150,10 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
                 "  No new results for search ($searchId): "
                 . "$newestRecordDate < $lastExecutionDate"
             );
+
+            // AK: Reset the timezone to the value before it was set to UTC
+            date_default_timezone_set($origTimeZone);
+
             return false;
         }
         $this->msg(
@@ -172,7 +174,9 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
         foreach ($records as $record) {
             // AK: Use custom date field set in config.ini in [Account] section at
             // scheduled_search_date_field. We get this with the "getField" function
-            // defined in AkSearch\RecordDriver\SolrDefault.
+            // defined in AkSearch\RecordDriver\SolrDefault. It returns the first
+            // value of the sorted array of a multivalued date field, i. e. the
+            // newest record date.
             $recDate = date(
                 $this->iso8601,
                 strtotime($record->getField($dateField, true, 'rsort'))
@@ -183,6 +187,10 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             }
             $newRecords[] = $record;
         }
+
+        // AK: Reset the timezone to the value before it was set to UTC
+        date_default_timezone_set($origTimeZone);
+
         return $newRecords;
     }
 
