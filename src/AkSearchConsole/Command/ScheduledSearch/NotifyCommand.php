@@ -29,6 +29,7 @@ namespace AkSearchConsole\Command\ScheduledSearch;
 
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Attribute\AsCommand;
 
 /**
  * AK: Extending console command: notify users of scheduled searches.
@@ -39,18 +40,13 @@ use Symfony\Component\Console\Output\OutputInterface;
  * @license  https://opensource.org/licenses/gpl-2.0.php GNU General Public License
  * @link     https://vufind.org/wiki/development Wiki
  */
+// TODO 10: Check if this attribute works!
+#[AsCommand(
+    name: 'scheduledsearch/notify',
+    description: 'Scheduled Search Notifier'
+)]
 class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
 {
-    /**
-     * The name of the command (the part after "public/index.php")
-     *
-     * AK: Don't remove this! Also when it is already set (to the same value ) in the
-     * parent class
-     *
-     * @var string
-     */
-    protected static $defaultName = 'scheduledsearch/notify';
-
     /**
      * Run the command.
      * 
@@ -106,7 +102,6 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
         $params->setLimit($this->limit);
         // AK: Use custom date field for setSort
         $params->setSort($dateField.' desc', true);
-
         $searchId = $searchObject->getSearchId();
         try {
             $records = $searchObject->getResults();
@@ -141,9 +136,8 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
         // AkSearch\RecordDriver\SolrDefault.
         $newestRecordDate = date(
             $this->iso8601,
-            strtotime($records[0]->getField($dateField, true, 'rsort'))
+            strtotime($records[0]->getField($dateField, true, 'rsort') ?? '')
         );
-
         $lastExecutionDate = $lastTime->format($this->iso8601);
         if ($newestRecordDate < $lastExecutionDate) {
             $this->msg(
@@ -200,7 +194,7 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
      * 
      * AK: Use "from" email set for "scheduled_search_email_from" in config.ini.
      *
-     * @param \VuFind\Db\Row\User $user    User to email
+     * @param UserEntityInterface $user    User to email
      * @param string              $message Email message body
      *
      * @return bool
@@ -215,7 +209,7 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             ?? $this->mainConfig->Site->email
             ?: $this->mainConfig->Site->email;
 
-        $to = $user->email;
+        $to = $user->getEmail();
         try {
             $this->mailer->send($to, $from, $subject, $message);
             return true;
@@ -231,7 +225,7 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             $this->mailer->send($to, $from, $subject, $message);
         } catch (\Exception $e) {
             $this->err(
-                "Failed to send message to {$user->email}: " . $e->getMessage()
+                "Failed to send message to {$user->getEmail()}: " . $e->getMessage()
             );
             return false;
         }
