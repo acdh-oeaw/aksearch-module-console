@@ -71,10 +71,10 @@ class NotifyCommand extends \VuFindConsole\Command\ScheduledSearch\NotifyCommand
             // AK: Output message if [Account]->schedule_searches is set to false
             $this->warn('Config "[Account] -> schedule_searches" in config.ini is '
             .'set to "false". Set to "true" for using the email alert system.');
-            return;
+            return 1;
         } else {
             // AK: If scheduled searches is turned on, execute the default action.
-            parent::execute($input, $output);
+            return parent::execute($input, $output);
         }
     }
 
