@@ -120,6 +120,14 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
                 'outputFile',
                 InputArgument::REQUIRED,
                 'Target CSV file path'
+            )->addArgument(
+                'pidFile',
+                InputArgument::OPTIONAL,
+                'File to write process id'
+            )->addArgument(
+                'cancelFile',
+                InputArgument::OPTIONAL,
+                'File used as cancel marker'
             );
     }
 
@@ -138,7 +146,17 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         $paramsFile = $input->getArgument('paramsFile');
         $statusFile = $input->getArgument('statusFile');
         $outputFile = $input->getArgument('outputFile');
+        $pidFile = $input->getArgument('pidFile');
+        $cancelFile = $input->getArgument('cancelFile');
         
+        if (!empty($pidFile)) {
+            @file_put_contents($pidFile, (string)getmypid());
+        }
+
+        $cancelled = function () use ($cancelFile) {
+            return !empty($cancelFile) && file_exists($cancelFile);
+        };
+
         // Check if params file exists
         if (!file_exists($paramsFile)) {
             $output->writeln("Error: Params file not found.");
@@ -194,6 +212,23 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         $rows = 1073741823;
         $recordsProcessed = 0;
         while ($cursorMark !== $prevCursorMark) {
+            if ($cancelled()) {
+                fclose($file);
+                @unlink($outputFile);
+                @file_put_contents($statusFile, json_encode([
+                    'status' => 'cancelled',
+                    'msg' => $this->translate('export_search_results_cancelled')
+                ]));
+                @unlink($paramsFile);
+                if (!empty($pidFile)) {
+                    @unlink($pidFile);
+                }
+                if (!empty($cancelFile)) {
+                    @unlink($cancelFile);
+                }
+                return 0;
+            }
+
             // Create array to hold search result records
             $records = [];
 
@@ -282,6 +317,12 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         ]));
 
         @unlink($paramsFile);
+        if (!empty($pidFile)) {
+            @unlink($pidFile);
+        }
+        if (!empty($cancelFile)) {
+            @unlink($cancelFile);
+        }
 
         return 0;
     }
