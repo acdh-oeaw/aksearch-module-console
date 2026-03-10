@@ -148,6 +148,14 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         // Unserialize request from params file
         $request = unserialize(file_get_contents($paramsFile));
 
+        // Get the active tab from the request if given (this is needed to
+        // determine if we are exporting from sowidok or not, since the metadata
+        // is different). This must be the ID of the active tab, e. g.
+        // "Solr:sowidok" for Sowidok. The ID can be found in config.ini under
+        // [SearchTabs] (to the left of the "=" sign).
+        $activeTab = $request['activeTab'] ?? null;
+        $isSowidok = ($activeTab == 'Solr:sowidok') ? true : false;
+
         // Get OS
         $os = $this->getOs();
 
@@ -158,8 +166,15 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         $file = fopen($outputFile, 'w');
 
         // Define the headings for the CSV
-        $headings[] = ['recordId', 'ACNo', 'Title',
-            'Authors', 'Publication_Place', 'Publisher', 'Date', 'Holdings'];
+        $headings = [];
+        if ($isSowidok) {
+            $headings[] = ['recordId', 'Title', 'Authors', 'Publication_Place',
+                'Publisher', 'Date', 'StorageSubject', 'MainSubject',
+                'FirstSubSubject'];
+        } else {
+            $headings[] = ['recordId', 'ACNo', 'Title', 'Authors',
+                'Publication_Place', 'Publisher', 'Date', 'Holdings'];
+        }
         
         // Translate headings
         $headingsTranslated[] = $this->getCsvTranslation(
@@ -235,8 +250,8 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
             }
 
             // Write metadata to CSV file
-            $this->writeToFile($this->getMetadata($solrMarcRecords), $file, $os,
-                $sep);
+            $this->writeToFile($this->getMetadata($isSowidok, $solrMarcRecords),
+                $file, $os, $sep);
             
             // Update cursorMark for next iteration
             $prevCursorMark = $cursorMark;
@@ -274,14 +289,15 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
     /**
      * Get metadata from search results that should be exported
      *
+     * @param bool $isSowidok Indicates if the data source is Sowidok
      * @param array $records An array of record driver objects
      * 
      * @return array An array of metadata
      */
-    protected function getMetadata($records) {
+    protected function getMetadata($isSowidok, $records) {
         $metadata = [];
         foreach ($records as $key => $record) {
-            $mmsId = $record->getUniqueID();
+            $recordId = $record->getUniqueID();
             $acNoRaw = $record->getAcNo();
             if (is_array($acNoRaw)) {
                 $acNo = (!empty($acNoRaw)) ? implode('; ', $acNoRaw) : '';
@@ -308,46 +324,73 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
             $placesRaw = $record->getPlacesOfPublication();
             $places = (!empty($placesRaw)) ? implode('; ', $placesRaw) : '';
 
-            // Get holding data from the Marc record
+            // Get holding or Sowidok data from the Marc record
             $allHoldingData = [];
-            $holdingDataRaw = $record->getExportData();
-            foreach ($holdingDataRaw as $holPid => $holdingData) {
-                $holdingData = array_filter($holdingData);
-                $location = ($holdingData['location'] ?? false)
-                    ? $this->translate('Location').': '.$holdingData['location']
-                    : null;
-                $callnumber = ($holdingData['callnumber'] ?? false)
-                    ? $this->translate('Call Number').': '
-                        .$holdingData['callnumber']
-                    : null;
-                $holding = ($holdingData['holding'] ?? false)
-                    ? $this->translate('summarizedHoldings').': '
-                        .$holdingData['holding']
-                    : null;
-                $gaps = ($holdingData['gaps'] ?? false)
-                    ? $this->translate('gaps').': '.$holdingData['gaps']
-                    : null;
-                $data = implode(', ', array_filter(
-                    [$location, $callnumber, $holding, $gaps]
-                ));
-                $allHoldingData[] = $data;                    
-            }
-
             $allHoldingDataStr = null;
-            if (!empty($allHoldingData)) {
-                $allHoldingDataStr = implode('; ', $allHoldingData);
+            $ablageschlagwort = null;
+            $hauptschlagwort = null;
+            $nebenschlagwort = null;
+            if ($isSowidok) {
+                $ablageschlagwort = $record->getSowidokAblageschlagwort();
+                $ablageschlagwort = $ablageschlagwort[0] ?? null;
+                $hauptschlagwort = $record->getSowidokHauptschlagwort();
+                $hauptschlagwort = $hauptschlagwort[0] ?? null;
+                $nebenschlagwort = $record->getSowidokNebenschlagwort();
+                $nebenschlagwort = $nebenschlagwort[0] ?? null;
+            } else {
+                $holdingDataRaw = $record->getExportData();
+                foreach ($holdingDataRaw as $holPid => $holdingData) {
+                    $holdingData = array_filter($holdingData);
+                    $location = ($holdingData['location'] ?? false)
+                        ? $this->translate('Location').': '
+                            .$holdingData['location']
+                        : null;
+                    $callnumber = ($holdingData['callnumber'] ?? false)
+                        ? $this->translate('Call Number').': '
+                            .$holdingData['callnumber']
+                        : null;
+                    $holding = ($holdingData['holding'] ?? false)
+                        ? $this->translate('summarizedHoldings').': '
+                            .$holdingData['holding']
+                        : null;
+                    $gaps = ($holdingData['gaps'] ?? false)
+                        ? $this->translate('gaps').': '.$holdingData['gaps']
+                        : null;
+                    $data = implode(', ', array_filter(
+                        [$location, $callnumber, $holding, $gaps]
+                    ));
+                    $allHoldingData[] = $data;                    
+                }
+
+                if (!empty($allHoldingData)) {
+                    $allHoldingDataStr = implode('; ', $allHoldingData);
+                }
             }
 
-            $metadata[] = [
-                'mmsId' => $mmsId,
-                'acNo' => $acNo,
-                'title' => $title,
-                'authors' => $authors,
-                'places' => $places,
-                'publishers' => $publishers,
-                'dates' => $dates,
-                'holdings' => $allHoldingDataStr
-            ];
+            if ($isSowidok) {
+                $metadata[] = [
+                    'recordId' => $recordId,
+                    'title' => $title,
+                    'authors' => $authors,
+                    'places' => $places,
+                    'publishers' => $publishers,
+                    'dates' => $dates,
+                    'ablageschlagwort' => $ablageschlagwort,
+                    'hauptschlagwort' => $hauptschlagwort,
+                    'nebenschlagwort' => $nebenschlagwort,
+                ];
+            } else {
+                $metadata[] = [
+                    'recordId' => $recordId,
+                    'acNo' => $acNo,
+                    'title' => $title,
+                    'authors' => $authors,
+                    'places' => $places,
+                    'publishers' => $publishers,
+                    'dates' => $dates,
+                    'holdings' => $allHoldingDataStr
+                ];
+            }
         }
 
         return $metadata;
@@ -366,7 +409,9 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
             'fq' => $filter,
             'hl' => ['false'],
             'fl' => ['id', 'acNo_txt', 'fullrecord', 'author', 'author2',
-                'author_corporate', 'publishDate', 'dateSpan', 'publisher',],
+                'author_corporate', 'publishDate', 'dateSpan', 'publisher',
+                'dkAblageschlagwort_txt_mv', 'dkHauptschlagwort_txt_mv',
+                'dkNebenschlagwort_txt_mv'],
             'wt' => ['json'],
             'json.nl' => ['arrarr'],
         ];
