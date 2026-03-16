@@ -34,13 +34,12 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use VuFindSearch\ParamBag;
 use VuFindSearch\Backend\Solr\Command\RawJsonSearchCommand;
-use VuFindSearch\Query\Query;
 use VuFind\I18n\Translator\TranslatorAwareInterface;
 use VuFind\I18n\Translator\TranslatorAwareTrait;
 use Laminas\Log\LoggerAwareInterface;
 use VuFind\Log\LoggerAwareTrait;
+use Laminas\Stdlib\Parameters;
 
 /**
  * Console command: CSV exporter
@@ -77,18 +76,29 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
     protected $recordFactory;
 
     /**
+     * Results plugin manager
+     *
+     * @var \VuFind\Search\Results\PluginManager
+     */
+    protected $resultsManager;
+
+    /**
      * Constructor
      *
      * @param \VuFindSearch\Service $searchService Search service for executing
      * search commands
      * @param \VuFind\RecordDriver\PluginManager $recordFactory Factory for
      * creating record drivers
+     * @param \VuFind\Search\Results\PluginManager $resultsManager Results plugin
+     * manager
      * @param string|null $name The name of the command (optional)
      */
-    public function __construct($searchService, $recordFactory, $name = null
+    public function __construct($searchService, $recordFactory, $resultsManager,
+        $name = null
     ) {
         $this->searchService = $searchService;
         $this->recordFactory = $recordFactory;
+        $this->resultsManager = $resultsManager;
         parent::__construct($name);
     }
 
@@ -205,11 +215,14 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         // Fetch records in batches using cursorMark
         $prevCursorMark = '';
         $cursorMark = '*';
-        $filter = array_merge(
-            $request['filter'] ?? [], $request['hiddenFilters'] ?? []
-        );
-        $q = $request['lookfor'] ?? '';
-        $query = new Query($q);
+
+        // Build query + backend params via core flow (same logic as GUI search)
+        $requestParams = new Parameters(is_array($request) ? $request : []);
+        $resultsObj = $this->resultsManager->get('Solr');
+        $paramsObj = $resultsObj->getParams();
+        $paramsObj->initFromRequest($requestParams);
+        $query = $paramsObj->getQuery();
+        $baseBackendParams = $paramsObj->getBackendParameters();
         $batchSize = 200;
         $rows = 1073741823;
         $recordsProcessed = 0;
@@ -231,26 +244,17 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
                 return 0;
             }
 
-            // Create array to hold search result records
-            $records = [];
-
             // Create search params with cursorMark
-            $params = new ParamBag(
-                $this->getDefaultSearchParams($filter) + [
-                    // Sort is required for cursorMark functionality
-                    'sort' => ['id asc'],
-                    // Override any default timeAllowed since it cannot be used
-                    // with cursorMark
-                    'timeAllowed' => -1,
-                    'cursorMark' => $cursorMark,
-                ]
-            );
+            $params = clone $baseBackendParams;
+            $params->set('sort', 'id asc');   // required for cursorMark
+            $params->set('timeAllowed', -1);  // cursorMark compatibility
+            $params->set('cursorMark', $cursorMark);
 
             // Create raw json search command
             $command = new RawJsonSearchCommand(
                 'Solr',
                 $query,
-                0, // Start is always 0 when using cursorMark
+                0,
                 min([$batchSize, $rows]),
                 $params
             );
@@ -260,7 +264,7 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
 
             // Get total number of results
             $total = $results->response->numFound;
-
+            
             // Check if there are no results
             if (empty($results->response->docs)) {
                 break;

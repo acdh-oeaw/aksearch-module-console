@@ -68,6 +68,7 @@ class ExportCsvCommandFactory implements FactoryInterface
         return new $requestedName(
             $container->get(\VuFindSearch\Service::class),
             $container->get(\VuFind\RecordDriver\PluginManager::class),
+            $container->get(\VuFind\Search\Results\PluginManager::class),
             ...($options ?? [])
         );
     }
