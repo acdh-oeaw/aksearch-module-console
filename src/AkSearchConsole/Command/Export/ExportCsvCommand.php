@@ -444,34 +444,6 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
     }
 
     /**
-     * Get default search params for export
-     *
-     * @param array $filter The filter query (facets)
-     * 
-     * @return array The default search params
-     */
-    protected function getDefaultSearchParams($filter): array
-    {
-        return [
-            'fq' => $filter,
-            'hl' => ['false'],
-            // AK: The "field list" parameter would be good to reduce the amount
-            // of data transferred from Solr and processed in PHP, but we would
-            // have to define all possible facet and search fields which is not
-            // really feasible. So we get all fields and only use the ones we
-            // need in PHP.
-            // KEEP FOR REFERENCE
-            // 'fl' => ['id', 'acNo_txt', 'fullrecord', 'author', 'author2',
-            //     'author_corporate', 'publishDate', 'dateSpan', 'publisher',
-            //     'dkAblageschlagwort_txt_mv', 'dkHauptschlagwort_txt_mv',
-            //     'dkNebenschlagwort_txt_mv'],
-            'wt' => ['json'],
-            'json.nl' => ['arrarr'],
-            'qt' => ['edismax'],
-        ];
-    }
-
-    /**
      * Write metadata to CSV file
      *
      * @param array  $values The values to write as CSV
