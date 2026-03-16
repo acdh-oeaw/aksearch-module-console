@@ -205,7 +205,9 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         // Fetch records in batches using cursorMark
         $prevCursorMark = '';
         $cursorMark = '*';
-        $filter = $request['filter'] ?? [];
+        $filter = array_merge(
+            $request['filter'] ?? [], $request['hiddenFilters'] ?? []
+        );
         $q = $request['lookfor'] ?? '';
         $query = new Query($q);
         $batchSize = 200;
@@ -449,12 +451,19 @@ class ExportCsvCommand extends Command implements TranslatorAwareInterface,
         return [
             'fq' => $filter,
             'hl' => ['false'],
-            'fl' => ['id', 'acNo_txt', 'fullrecord', 'author', 'author2',
-                'author_corporate', 'publishDate', 'dateSpan', 'publisher',
-                'dkAblageschlagwort_txt_mv', 'dkHauptschlagwort_txt_mv',
-                'dkNebenschlagwort_txt_mv'],
+            // AK: The "field list" parameter would be good to reduce the amount
+            // of data transferred from Solr and processed in PHP, but we would
+            // have to define all possible facet and search fields which is not
+            // really feasible. So we get all fields and only use the ones we
+            // need in PHP.
+            // KEEP FOR REFERENCE
+            // 'fl' => ['id', 'acNo_txt', 'fullrecord', 'author', 'author2',
+            //     'author_corporate', 'publishDate', 'dateSpan', 'publisher',
+            //     'dkAblageschlagwort_txt_mv', 'dkHauptschlagwort_txt_mv',
+            //     'dkNebenschlagwort_txt_mv'],
             'wt' => ['json'],
             'json.nl' => ['arrarr'],
+            'qt' => ['edismax'],
         ];
     }
 
